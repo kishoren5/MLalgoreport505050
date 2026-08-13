@@ -1,0 +1,84 @@
+---
+- name: Deploy Next Word Predictor Flask Application
+  hosts: webservers
+  become: yes
+  vars:
+    docker_image: "kishoren5/next-word-predictor:latest"
+    container_name: "next-word-predictor"
+    app_port: 5000
+
+  tasks:
+    - name: Update apt package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+
+    - name: Install required system packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - python3-pip
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Add Docker GPG apt Key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Add Docker Repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Install Docker CE
+      apt:
+        name: docker-ce
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Ensure Docker service is started and enabled
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add admin user to docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: yes
+
+    - name: Install Docker SDK for Python (required for Ansible docker modules)
+      pip:
+        name: docker
+        state: present
+
+    - name: Pull Docker image from registry
+      docker_image:
+        name: "{{ docker_image }}"
+        source: pull
+
+    - name: Stop and remove existing container if it exists
+      docker_container:
+        name: "{{ container_name }}"
+        state: absent
+
+    - name: Start Docker container running the Flask app
+      docker_container:
+        name: "{{ container_name }}"
+        image: "{{ docker_image }}"
+        state: started
+        restart_policy: always
+        ports:
+          - "80:{{ app_port }}"
+        env:
+          PORT: "{{ app_port }}"
